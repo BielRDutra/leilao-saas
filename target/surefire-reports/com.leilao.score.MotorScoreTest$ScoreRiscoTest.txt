@@ -1,0 +1,15 @@
+-------------------------------------------------------------------------------
+Test set: com.leilao.score.MotorScoreTest$ScoreRiscoTest
+-------------------------------------------------------------------------------
+Tests run: 5, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.047 s <<< FAILURE! -- in com.leilao.score.MotorScoreTest$ScoreRiscoTest
+com.leilao.score.MotorScoreTest$ScoreRiscoTest.judicial_ganhaBonusDe10 -- Time elapsed: 0.031 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: 110.0
+ but was: 100.0
+	at com.leilao.score.MotorScoreTest$ScoreRiscoTest.judicial_ganhaBonusDe10(MotorScoreTest.java:234)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+
