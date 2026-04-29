@@ -1,6 +1,8 @@
 /Users/gabrieldutra/Documents/Code/leilao-saas/src/main/java/com/leilao/LeilaoSaasApplication.java
 /Users/gabrieldutra/Documents/Code/leilao-saas/src/main/java/com/leilao/config/ScoreConfig.java
 /Users/gabrieldutra/Documents/Code/leilao-saas/src/main/java/com/leilao/config/ScraperConfig.java
+/Users/gabrieldutra/Documents/Code/leilao-saas/src/main/java/com/leilao/controllers/LoteController.java
+/Users/gabrieldutra/Documents/Code/leilao-saas/src/main/java/com/leilao/controllers/OrigemLeilaoController.java
 /Users/gabrieldutra/Documents/Code/leilao-saas/src/main/java/com/leilao/model/Lote.java
 /Users/gabrieldutra/Documents/Code/leilao-saas/src/main/java/com/leilao/model/OrigemLeilao.java
 /Users/gabrieldutra/Documents/Code/leilao-saas/src/main/java/com/leilao/model/StatusLote.java
