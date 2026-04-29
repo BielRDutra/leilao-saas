@@ -103,6 +103,58 @@ mvn flyway:migrate   # forçar manualmente
 mvn flyway:repair    # reparar checksum em caso de edição acidental
 ```
 
+
+## Docker
+
+### Subir o ambiente completo
+
+```bash
+# 1. Copie o arquivo de variáveis
+cp .env.example .env
+
+# 2. Sobe banco + app (primeira vez faz o build automaticamente)
+make up
+# ou sem Make:
+docker compose up -d
+
+# App disponível em: http://localhost:8080
+# API ranking:       http://localhost:8080/api/v1/lotes/ranking
+```
+
+### Comandos do dia a dia
+
+```bash
+make logs      # acompanha logs em tempo real
+make coleta    # executa scraping agora
+make restart   # reinicia a app após mudança
+make build     # reconstrói a imagem após mudança de código
+make status    # estado dos containers + health da API
+make tools     # sobe também o pgAdmin (http://localhost:5050)
+make down      # para tudo
+```
+
+### Perfis
+
+| Perfil | Comando | Quando usar |
+|--------|---------|-------------|
+| Desenvolvimento | `make up` | Dia a dia local |
+| Com pgAdmin | `make tools` | Inspecionar o banco visualmente |
+| Produção | `make prod` | VPS/servidor — banco sem porta exposta |
+
+### Estrutura dos arquivos Docker
+
+```
+Dockerfile                 ← build multi-stage (JDK → JRE + Chrome)
+docker-compose.yml         ← serviços: db + app + pgAdmin
+docker-compose.override.yml ← sobrescritas de desenvolvimento
+docker-compose.prod.yml    ← sobrescritas de produção
+.env.example               ← variáveis de ambiente (copiar para .env)
+.dockerignore              ← arquivos excluídos do build
+docker/
+  init-db.sql              ← script de inicialização do banco
+  pgadmin-servers.json     ← configuração automática do pgAdmin
+```
+
 ## Equivalência Python → Java
 
 | Python                        | Java                          |

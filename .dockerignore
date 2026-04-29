@@ -1,0 +1,29 @@
+# .dockerignore
+# Exclui arquivos que não precisam ir para a imagem Docker
+
+# Build artifacts
+target/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# Git
+.git/
+.gitignore
+
+# Logs locais
+logs/
+*.log
+
+# Ambiente local
+.env
+.env.local
+docker-compose.override.yml
+
+# Documentação
+README.md
+docs/

@@ -1,18 +1,126 @@
-version: '3.8'
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────
+# LeilãoSaaS — docker-compose completo
+#
+# Serviços:
+#   db        → PostgreSQL 16 (banco principal)
+#   app       → Spring Boot (API REST + scrapers + score)
+#   pgadmin   → Interface web para o banco (opcional)
+#
+# Uso rápido:
+#   docker compose up -d           ← sobe tudo em background
+#   docker compose logs -f app     ← acompanha os logs
+#   docker compose down -v         ← para e remove volumes
+# ─────────────────────────────────────────────────────────────
 
 services:
-  postgres:
+
+  # ── PostgreSQL ──────────────────────────────────────────────
+  db:
     image: postgres:16-alpine
     container_name: leiloes-db
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: leiloes
-      POSTGRES_USER: usuario
-      POSTGRES_PASSWORD: senha
+      POSTGRES_DB:       leiloes
+      POSTGRES_USER:     leilao
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-leilao_dev_123}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U leilao -d leiloes"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - leilao-net
 
+  # ── Spring Boot App ─────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: leiloes-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Banco de dados
+      SPRING_DATASOURCE_URL:      jdbc:postgresql://db:5432/leiloes
+      SPRING_DATASOURCE_USERNAME: leilao
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-leilao_dev_123}
+
+      # Flyway
+      SPRING_FLYWAY_ENABLED: "true"
+
+      # Scheduler (cron diário às 06:00 BRT = 09:00 UTC)
+      LEILAO_SCRAPER_CRON: "0 0 9 * * *"
+      LEILAO_SCRAPER_HEADLESS: "true"
+
+      # Score
+      LEILAO_SCORE_PESO_DESCONTO:      "0.40"
+      LEILAO_SCORE_PESO_FINANCIAMENTO: "0.25"
+      LEILAO_SCORE_PESO_LOCALIZACAO:   "0.20"
+      LEILAO_SCORE_PESO_RISCO:         "0.15"
+
+      # JVM
+      JAVA_TOOL_OPTIONS: >-
+        -XX:MaxRAMPercentage=75.0
+        -Djava.awt.headless=true
+        -Dwebdriver.chrome.driver=/usr/bin/chromedriver
+
+      # Logs
+      LOGGING_LEVEL_COM_LEILAO: INFO
+    ports:
+      - "8080:8080"
+    volumes:
+      - app_logs:/app/logs
+    networks:
+      - leilao-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ── pgAdmin (interface visual para o banco) ─────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: leiloes-pgadmin
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      PGADMIN_DEFAULT_EMAIL:    ${PGADMIN_EMAIL:-admin@leilao.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./docker/pgadmin-servers.json:/pgadmin4/servers.json:ro
+    networks:
+      - leilao-net
+    profiles:
+      - tools   # só sobe com: docker compose --profile tools up
+
+# ── Volumes ─────────────────────────────────────────────────
 volumes:
   postgres_data:
+    name: leiloes_postgres_data
+  pgadmin_data:
+    name: leiloes_pgadmin_data
+  app_logs:
+    name: leiloes_app_logs
+
+# ── Rede interna ────────────────────────────────────────────
+networks:
+  leilao-net:
+    name: leilao-network
+    driver: bridge

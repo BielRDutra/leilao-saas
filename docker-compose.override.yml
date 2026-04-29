@@ -1,0 +1,28 @@
+# docker-compose.override.yml
+# Aplicado automaticamente em desenvolvimento (docker compose up).
+# Não usar em produção — use docker-compose.prod.yml.
+#
+# Diferenças do override:
+#   - Porta do banco exposta para conexão local (DBeaver, IntelliJ)
+#   - Logs mais verbosos
+#   - Hot reload via volume do JAR (opcional)
+#   - Sem restart automático (facilita debug)
+
+version: "3.9"
+
+services:
+  db:
+    ports:
+      - "5432:5432"   # banco acessível localmente
+    environment:
+      POSTGRES_PASSWORD: leilao_dev_123   # senha simples para dev
+
+  app:
+    restart: "no"    # não reinicia automaticamente em dev
+    environment:
+      LOGGING_LEVEL_COM_LEILAO:        DEBUG
+      LOGGING_LEVEL_ORG_HIBERNATE_SQL: DEBUG
+      SPRING_JPA_SHOW_SQL:             "true"
+      # Executa coleta imediatamente ao subir (dev)
+      # Comente se não quiser esperar o scraping ao iniciar
+      LEILAO_SCRAPER_CRON: "0 */30 * * * *"   # a cada 30min em dev
