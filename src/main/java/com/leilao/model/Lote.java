@@ -194,4 +194,8 @@ public class Lote {
         return "Lote{id=%d, fonte='%s', tipo=%s, lance=R$%s}"
                 .formatted(id, fonte, tipo, valorLanceInicial);
     }
+
+    public Object getScoreOportunidade() {
+        throw new UnsupportedOperationException("Not supported yet.");
+    }
 }
