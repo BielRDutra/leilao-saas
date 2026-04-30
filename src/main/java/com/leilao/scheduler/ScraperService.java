@@ -3,6 +3,7 @@ package com.leilao.scheduler;
 import com.leilao.model.Lote;
 import com.leilao.repository.LoteRepository;
 import com.leilao.scraper.ScraperBase;
+import com.leilao.alerta.AlertaService;
 import com.leilao.score.MotorScore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,7 @@ public class ScraperService {
     private final List<ScraperBase> scrapers;
     private final LoteRepository    loteRepository;
     private final MotorScore        motorScore;
+    private final AlertaService     alertaService;
 
     public ScraperService(List<ScraperBase> scrapers,
                           LoteRepository loteRepository,
@@ -66,6 +68,11 @@ public class ScraperService {
         int pontuados = motorScore.processarPendentes();
 
         // Resumo final
+        // Fase 3: disparar alertas para os lotes pontuados
+        log.info("── Processando alertas de score...");
+        int alertasEnviados = alertaService.processarAlertasDiarios();
+        log.info("  Alertas enviados: {}", alertasEnviados);
+
         log.info("══════════════════════════════════════════");
         log.info("  Coleta finalizada");
         log.info("  Coletados : {}", totalColetados);

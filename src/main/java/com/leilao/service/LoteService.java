@@ -7,8 +7,8 @@ import com.leilao.model.StatusLote;
 import com.leilao.repository.LoteRepository;
 import com.leilao.score.MotorScore;
 import jakarta.persistence.EntityNotFoundException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
@@ -26,25 +27,14 @@ import java.util.stream.Collectors;
  * Camada de negócio da API REST.
  * Isola o controller das queries JPA e do motor de score.
  */
-@SuppressWarnings("all")
+@Slf4j
 @Service
+@RequiredArgsConstructor
 public class LoteService {
 
-    private static final Logger log = LoggerFactory.getLogger(LoteService.class);
-
-    private final LoteRepository loteRepository;
-    private final MotorScore motorScore;
-    private final ScoreConfig scoreConfig;
-
-    public LoteService(
-        LoteRepository loteRepository,
-        MotorScore motorScore,
-        ScoreConfig scoreConfig
-    ) {
-        this.loteRepository = loteRepository;
-        this.motorScore = motorScore;
-        this.scoreConfig = scoreConfig;
-    }
+    private final LoteRepository  loteRepository;
+    private final MotorScore       motorScore;
+    private final ScoreConfig      scoreConfig;
 
     // ── Ranking ───────────────────────────────────────────────────────────────
 
