@@ -1,0 +1,14 @@
+{
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Spring Boot-LeilaoSaasApplication<leilao-saas>",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "mainClass": "com.leilao.LeilaoSaasApplication",
+            "projectName": "leilao-saas",
+            "args": "",
+            "envFile": "${workspaceFolder}/.env"
+        }
+    ]
+}
