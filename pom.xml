@@ -9,7 +9,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.4</version>
+        <version>3.5.14</version>
     </parent>
 
     <groupId>com.leilao</groupId>
@@ -19,8 +19,8 @@
     <description>SaaS de filtragem inteligente de leilões</description>
 
     <properties>
-        <java.version>25</java.version>
-        <lombok.version>1.18.36</lombok.version>
+        <java.version>21</java.version>
+        <lombok.version>1.18.30</lombok.version>
         <selenium.version>4.21.0</selenium.version>
         <jsoup.version>1.17.2</jsoup.version>
         <okhttp.version>4.12.0</okhttp.version>
@@ -33,6 +33,10 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
 
         <!-- ── JPA + PostgreSQL ──────────────────────────────── -->
         <dependency>
@@ -42,7 +46,6 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <version>42.7.4</version>
             <scope>runtime</scope>
         </dependency>
 
@@ -92,7 +95,6 @@
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <version>1.18.40</version>
             <scope>provided</scope>
         </dependency>
 
@@ -111,13 +113,12 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
                 <configuration>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
-                            <version>1.18.40</version>
+                            <version>${lombok.version}</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
