@@ -5,18 +5,22 @@ import com.leilao.repository.LoteRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
 /**
- * Orquestra todo o fluxo de alertas:
- *   1. Busca lotes recém pontuados (coletados hoje)
- *   2. Para cada lote, encontra assinantes cujos critérios são satisfeitos
- *   3. Para cada assinante, envia e-mail e/ou WhatsApp (se ainda não enviado)
- *   4. Registra o histórico para evitar re-envios
+ * Orquestra o fluxo de alertas:
+ *   1. Busca lotes coletados hoje com score calculado
+ *   2. Filtra assinantes cujos critérios são satisfeitos
+ *   3. Envia e-mail e/ou WhatsApp (idempotente — evita re-envios)
+ *   4. Registra o histórico
  *
- * Chamado pelo ScraperScheduler após o cálculo de score.
+ * Fix #11: propagação de transações corrigida.
+ *   processarAlertasDiarios é NOT_SUPPORTED (sem transação longa aberta durante I/O de rede).
+ *   processarLote é REQUIRES_NEW (transação curta e isolada por lote).
+ *   registrarHistorico é REQUIRES_NEW (persiste mesmo se a transação pai falhar).
  */
 @Slf4j
 @Service
@@ -30,33 +34,30 @@ public class AlertaService {
     private final WhatsAppService           whatsAppService;
 
     /**
-     * Processa alertas para os lotes coletados hoje.
-     * Retorna o total de notificações enviadas.
+     * Fix #11: NOT_SUPPORTED — não mantém transação aberta durante chamadas de rede
+     * (envio de e-mail / HTTP para Z-API). Cada lote abre sua própria transação.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public int processarAlertasDiarios() {
         List<Lote> lotes = loteRepo.findColetadosHoje();
         log.info("[alertas] Verificando {} lotes coletados hoje...", lotes.size());
 
-        int totalEnviados = 0;
+        int total = 0;
         for (Lote lote : lotes) {
-            totalEnviados += processarLote(lote);
+            total += processarLote(lote);
         }
-
-        log.info("[alertas] {} notificações enviadas no total.", totalEnviados);
-        return totalEnviados;
+        log.info("[alertas] {} notificações enviadas.", total);
+        return total;
     }
 
     /**
-     * Processa alertas para um único lote.
-     * Usado após cálculo de score individual via API.
+     * Fix #11: REQUIRES_NEW — transação independente por lote.
+     * Isola falhas: erro em um lote não afeta os demais.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public int processarLote(Lote lote) {
-        // Lote sem score ou abaixo do mínimo possível — ignora
         if (lote.getScoreOportunidade() == null) return 0;
 
-        // Busca assinantes cujos filtros de localização/tipo batem com o lote
         List<Assinante> candidatos = assinanteRepo.buscarAssinantesParaLote(
             lote.getEstado(),
             lote.getCidade(),
@@ -65,33 +66,22 @@ public class AlertaService {
 
         int enviados = 0;
         for (Assinante assinante : candidatos) {
-            // Verifica se o score do lote atinge o threshold do assinante
-            if (lote.getScoreOportunidade().compareTo(assinante.getScoreMinimo()) < 0) {
-                continue;
-            }
+            if (lote.getScoreOportunidade().compareTo(assinante.getScoreMinimo()) < 0) continue;
             enviados += despacharNotificacoes(assinante, lote);
         }
-
         return enviados;
     }
 
-    // ── Despacho por canal ────────────────────────────────────────────────────
+    // ── Despacho ──────────────────────────────────────────────────────────────
 
     private int despacharNotificacoes(Assinante assinante, Lote lote) {
         int enviados = 0;
-
-        if (assinante.temEmail()) {
-            enviados += enviarCanal(assinante, lote, CanalAlerta.EMAIL);
-        }
-        if (assinante.temWhatsApp()) {
-            enviados += enviarCanal(assinante, lote, CanalAlerta.WHATSAPP);
-        }
-
+        if (assinante.temEmail())    enviados += enviarCanal(assinante, lote, CanalAlerta.EMAIL);
+        if (assinante.temWhatsApp()) enviados += enviarCanal(assinante, lote, CanalAlerta.WHATSAPP);
         return enviados;
     }
 
     private int enviarCanal(Assinante assinante, Lote lote, CanalAlerta canal) {
-        // Checa se já foi enviado (idempotência)
         if (historicoRepo.existsByAssinanteIdAndLoteIdAndCanal(
                 assinante.getId(), lote.getId(), canal)) {
             log.debug("[alertas] Já enviado: assinante={} lote={} canal={}",
@@ -99,28 +89,29 @@ public class AlertaService {
             return 0;
         }
 
-        boolean sucesso;
-        String erroMsg = null;
-
+        boolean sucesso = false;
+        String  erroMsg = null;
         try {
             sucesso = switch (canal) {
-                case EMAIL     -> emailService.enviarAlerta(assinante, lote);
-                case WHATSAPP  -> whatsAppService.enviarAlerta(assinante, lote);
+                case EMAIL    -> emailService.enviarAlerta(assinante, lote);
+                case WHATSAPP -> whatsAppService.enviarAlerta(assinante, lote);
             };
         } catch (Exception e) {
-            sucesso = false;
             erroMsg = e.getMessage();
             log.error("[alertas] Erro ao enviar {} para assinante {}: {}",
                 canal, assinante.getId(), e.getMessage());
         }
 
-        // Registra no histórico independentemente do resultado
         registrarHistorico(assinante, lote, canal, sucesso, erroMsg);
-
         return sucesso ? 1 : 0;
     }
 
-    private void registrarHistorico(
+    /**
+     * Fix #11: REQUIRES_NEW — persiste o histórico em transação própria,
+     * garantindo que o registro seja salvo mesmo se a transação do lote falhar.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void registrarHistorico(
             Assinante assinante, Lote lote,
             CanalAlerta canal, boolean sucesso, String erroMensagem) {
         try {
@@ -132,8 +123,8 @@ public class AlertaService {
                 .erroMensagem(erroMensagem)
                 .build());
         } catch (Exception e) {
-            // Violação de unique constraint = já foi enviado por outra thread
-            log.debug("[alertas] Histórico já existe (race condition ignorada): {}", e.getMessage());
+            log.debug("[alertas] Histórico já existe (race condition ignorada): {}",
+                e.getMessage());
         }
     }
 }

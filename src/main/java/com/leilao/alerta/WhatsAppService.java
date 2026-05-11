@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leilao.model.Lote;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -13,26 +14,18 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Serviço de envio de mensagens WhatsApp via Z-API.
- * https://developer.z-api.io
+ * Envio de mensagens WhatsApp via Z-API.
  *
- * Configurar em application.properties:
- *   leilao.alerta.zapi.instance-id=SUA_INSTANCIA
- *   leilao.alerta.zapi.token=SEU_TOKEN
- *   leilao.alerta.zapi.security-token=SEU_SECURITY_TOKEN
- *   leilao.alerta.email.base-url=https://seusite.com
- *
- * O número de WhatsApp do assinante deve estar no formato internacional
- * sem o "+": "5511999990000"
+ * Fix #6: construtor padrão removido. O Spring injeta os @Value corretamente
+ * via injeção de campos quando NÃO há construtor que interfira no ciclo de vida.
+ * OkHttpClient e ObjectMapper são criados em @PostConstruct após injeção completa.
  */
 @Slf4j
 @Service
 public class WhatsAppService {
 
-    private static final String ZAPI_BASE = "https://api.z-api.io/instances/%s/token/%s/send-text";
-
-    private final OkHttpClient httpClient;
-    private final ObjectMapper mapper;
+    private static final String ZAPI_BASE =
+        "https://api.z-api.io/instances/%s/token/%s/send-text";
 
     @Value("${leilao.alerta.zapi.instance-id:}")
     private String instanceId;
@@ -46,18 +39,18 @@ public class WhatsAppService {
     @Value("${leilao.alerta.email.base-url:http://localhost:3000}")
     private String baseUrl;
 
-    public WhatsAppService() {
+    private OkHttpClient httpClient;
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    // Fix #6: @PostConstruct garante que @Value já foram injetados antes da inicialização
+    @jakarta.annotation.PostConstruct
+    void init() {
         this.httpClient = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .build();
-        this.mapper = new ObjectMapper();
     }
 
-    /**
-     * Envia mensagem de alerta via WhatsApp.
-     * Retorna true se enviou com sucesso.
-     */
     public boolean enviarAlerta(Assinante assinante, Lote lote) {
         if (instanceId.isBlank() || token.isBlank()) {
             log.warn("[whatsapp] Z-API não configurada. Ignorando envio para {}.",
@@ -93,7 +86,6 @@ public class WhatsAppService {
                     resp.body() != null ? resp.body().string() : "");
                 return false;
             }
-
         } catch (Exception e) {
             log.error("[whatsapp] Falha ao enviar para {}: {}",
                 assinante.getWhatsapp(), e.getMessage());
@@ -101,40 +93,36 @@ public class WhatsAppService {
         }
     }
 
-    // ── Conteúdo da mensagem ──────────────────────────────────────────────────
-
     private String montarMensagem(Assinante assinante, Lote lote) {
         NumberFormat brl = NumberFormat.getCurrencyInstance(new Locale("pt", "BR"));
 
-        String nome     = assinante.getNome() != null ? assinante.getNome() : "usuário";
-        String lance    = brl.format(lote.getValorLanceInicial());
+        String nome    = assinante.getNome() != null ? assinante.getNome() : "usuário";
+        String lance   = brl.format(lote.getValorLanceInicial());
         String desconto = lote.getDescontoPercentual() != null
             ? "%.1f%% abaixo da avaliação".formatted(lote.getDescontoPercentual().doubleValue())
             : "desconto não informado";
-        String score    = lote.getScoreOportunidade() != null
+        String score   = lote.getScoreOportunidade() != null
             ? "%.1f".formatted(lote.getScoreOportunidade().doubleValue()) : "—";
-        String classif  = lote.getClassificacao() != null ? lote.getClassificacao() : "";
-        String local    = "%s/%s".formatted(
-            lote.getCidade()  != null ? lote.getCidade()  : "—",
-            lote.getEstado()  != null ? lote.getEstado()  : "—"
+        String classif = lote.getScoreOportunidade() != null
+            ? com.leilao.util.Classificacao.de(lote.getScoreOportunidade()) : ""; // Fix #14
+        String local   = "%s/%s".formatted(
+            lote.getCidade() != null ? lote.getCidade() : "—",
+            lote.getEstado() != null ? lote.getEstado() : "—"
         );
-        String financ   = lote.isAceitaFinanciamento() ? "✅ Financiamento" : "";
-        String fgts     = lote.isAceitaFgts() ? "✅ FGTS" : "";
-        String tags     = "%s %s".formatted(financ, fgts).trim();
-        String urlLote  = "%s/lote/%d".formatted(baseUrl, lote.getId());
+        String financ  = lote.isAceitaFinanciamento() ? "✅ Financiamento" : "";
+        String fgts    = lote.isAceitaFgts()          ? "✅ FGTS"         : "";
+        String tags    = (financ + " " + fgts).trim();
+        String urlLote = "%s/lote/%d".formatted(baseUrl, lote.getId());
 
-        return """
-            🏠 *Nova oportunidade, %s!*
-
-            📊 Score: *%s* — _%s_
-            📍 %s
-            💰 Lance: *%s*
-            📉 %s
-            %s
-
-            🔗 Ver detalhes:
-            %s
-            """.formatted(nome, score, classif, local, lance, desconto,
-                tags.isBlank() ? "" : tags, urlLote).strip();
+        // Fix #12: template string limpo sem misturar %% de printf com variáveis Java
+        StringBuilder sb = new StringBuilder();
+        sb.append("🏠 *Nova oportunidade, ").append(nome).append("!*\n\n");
+        sb.append("📊 Score: *").append(score).append("* — _").append(classif).append("_\n");
+        sb.append("📍 ").append(local).append("\n");
+        sb.append("💰 Lance: *").append(lance).append("*\n");
+        sb.append("📉 ").append(desconto).append("\n");
+        if (!tags.isBlank()) sb.append(tags).append("\n");
+        sb.append("\n🔗 Ver detalhes:\n").append(urlLote);
+        return sb.toString();
     }
 }

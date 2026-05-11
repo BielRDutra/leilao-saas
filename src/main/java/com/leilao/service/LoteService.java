@@ -11,50 +11,49 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDateTime;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
  * Camada de negócio da API REST.
- * Isola o controller das queries JPA e do motor de score.
+ *
+ * Fix #3:  maior desconto calculado no banco, não em memória.
+ * Fix #4:  findTopPorScore e buscarPorFiltros usam Pageable.
+ * Fix #13: scoreMinimo passado para a query do banco, elimina filtragem em memória.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class LoteService {
 
-    private final LoteRepository  loteRepository;
-    private final MotorScore       motorScore;
-    private final ScoreConfig      scoreConfig;
+    private final LoteRepository loteRepository;
+    private final MotorScore     motorScore;
+    private final ScoreConfig    scoreConfig;
 
     // ── Ranking ───────────────────────────────────────────────────────────────
 
-    /**
-     * Retorna os N lotes com maior score de oportunidade.
-     * Equivale a "melhores oportunidades agora".
-     */
     public Page<RankingItemDTO> ranking(int limite, Pageable pageable) {
         BigDecimal scoreMin = BigDecimal.valueOf(scoreConfig.getMinimoListagem());
-        List<Lote> lotes = loteRepository.findTopPorScore(scoreMin, limite);
 
-        List<RankingItemDTO> items = lotes.stream()
-            .map(RankingItemDTO::from)
-            .toList();
+        // Fix #4: passa PageRequest com limite como size — sem LIMIT na JPQL
+        Pageable limitado = PageRequest.of(0, limite,
+            org.springframework.data.domain.Sort.by("scoreOportunidade").descending());
 
-        int start = (int) pageable.getOffset();
-        int end   = Math.min(start + pageable.getPageSize(), items.size());
-        List<RankingItemDTO> pagina = (start < items.size())
-            ? items.subList(start, end)
-            : List.of();
+        List<Lote> lotes = loteRepository.findTopPorScore(scoreMin, limitado);
+        List<RankingItemDTO> items = lotes.stream().map(RankingItemDTO::from).toList();
+
+        int start  = (int) pageable.getOffset();
+        int end    = Math.min(start + pageable.getPageSize(), items.size());
+        List<RankingItemDTO> pagina = start < items.size()
+            ? items.subList(start, end) : List.of();
 
         return new PageImpl<>(pagina, pageable, items.size());
     }
@@ -62,10 +61,17 @@ public class LoteService {
     // ── Busca filtrada ────────────────────────────────────────────────────────
 
     /**
-     * Busca lotes aplicando filtros opcionais.
-     * Todos os parâmetros do FiltroLoteDTO são opcionais.
+     * Fix #13: scoreMinimo agora é passado para a query do banco.
+     * Antes, o scoreMinimo era filtrado em memória APÓS aplicar o limite,
+     * o que produzia resultados com menos itens que o esperado.
      */
     public Page<LoteDTO> buscar(FiltroLoteDTO filtro, Pageable pageable) {
+        Pageable limitado = PageRequest.of(
+            pageable.getPageNumber(),
+            filtro.limiteEfetivo(),
+            pageable.getSortOr(org.springframework.data.domain.Sort.by("dataLeilao").ascending())
+        );
+
         List<Lote> lotes = loteRepository.buscarPorFiltros(
             StatusLote.DISPONIVEL,
             filtro.cidade(),
@@ -73,70 +79,54 @@ public class LoteService {
             filtro.tipo(),
             filtro.aceitaFinanciamento(),
             filtro.valorMaximo(),
-            filtro.limiteEfetivo()
+            filtro.scoreMinimo(), // Fix #13: direto no banco
+            limitado
         );
 
-        // Filtro de score mínimo (em memória — campo calculado)
-        if (filtro.scoreMinimo() != null) {
-            lotes = lotes.stream()
-                .filter(l -> l.getScoreOportunidade() != null
-                    && l.getScoreOportunidade().compareTo(filtro.scoreMinimo()) >= 0)
-                .toList();
-        }
-
-        List<LoteDTO> dtos = lotes.stream().map(LoteDTO::from).toList();
-
-        int start = (int) pageable.getOffset();
-        int end   = Math.min(start + pageable.getPageSize(), dtos.size());
-        List<LoteDTO> pagina = (start < dtos.size()) ? dtos.subList(start, end) : List.of();
-
-        return new PageImpl<>(pagina, pageable, dtos.size());
+        List<LoteDTO> dtos  = lotes.stream().map(LoteDTO::from).toList();
+        return new PageImpl<>(dtos, pageable, dtos.size());
     }
 
     // ── Detalhe ───────────────────────────────────────────────────────────────
 
-    /** Retorna um lote pelo ID com todos os campos, incluindo score detalhado. */
     public LoteDTO buscarPorId(Long id) {
-        Lote lote = loteRepository.findById(id)
+        return loteRepository.findById(id)
+            .map(LoteDTO::from)
             .orElseThrow(() -> new EntityNotFoundException("Lote não encontrado: " + id));
-        return LoteDTO.from(lote);
     }
 
     // ── Resumo / estatísticas ─────────────────────────────────────────────────
 
-    /** Retorna estatísticas gerais da plataforma. */
     public ResumoDTO resumo() {
         long total       = loteRepository.count();
         long disponiveis = loteRepository.countByStatus(StatusLote.DISPONIVEL);
         long comScore    = loteRepository.countByScoreOportunidadeIsNotNull();
         long hoje        = loteRepository.contarColetadosHoje();
 
-        // Contagem por fonte
         Map<String, Long> porFonte = loteRepository.contarPorFonte()
             .stream().collect(Collectors.toMap(
-                r -> (String)  r[0],
-                r -> (Long)    r[1]
+                r -> (String) r[0],
+                r -> (Long)   r[1]
             ));
 
-        // Contagem por tipo
         Map<String, Long> porTipo = loteRepository.contarPorTipo()
             .stream().collect(Collectors.toMap(
                 r -> r[0].toString(),
                 r -> (Long) r[1]
             ));
 
-        // Score mediano
         BigDecimal scoreMediano = loteRepository.scoreMediano();
 
-        // Maior desconto
-        BigDecimal maiorDesconto = loteRepository.findAll().stream()
-            .filter(l -> l.getDescontoPercentual() != null)
-            .max(Comparator.comparing(Lote::getDescontoPercentual))
+        // Fix #3: maior desconto calculado no banco — sem findAll() em memória
+        BigDecimal maiorDesconto = loteRepository
+            .findLoteComMaiorDesconto(PageRequest.of(0, 1))
+            .stream()
+            .findFirst()
             .map(Lote::getDescontoPercentual)
             .orElse(null);
 
-        // Data da última coleta
-        LocalDateTime ultimaColeta = loteRepository.findTopByOrderByColetadoEmDesc()
+        LocalDateTime ultimaColeta = loteRepository
+            .findTopByOrderByColetadoEmDesc()
             .map(Lote::getColetadoEm)
             .orElse(null);
 
@@ -148,14 +138,12 @@ public class LoteService {
 
     // ── Score ─────────────────────────────────────────────────────────────────
 
-    /** Força o recálculo de score de todos os lotes. */
     @Transactional
     public int recalcularScore() {
         log.info("[api] Recálculo de score solicitado via API.");
         return motorScore.recalcularTodos();
     }
 
-    /** Calcula o score de um lote específico. */
     @Transactional
     public LoteDTO calcularScoreLote(Long id) {
         Lote lote = loteRepository.findById(id)

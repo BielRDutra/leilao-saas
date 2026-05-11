@@ -2,13 +2,14 @@ package com.leilao.dto;
 
 import com.leilao.model.Lote;
 import com.leilao.model.TipoLote;
+import com.leilao.util.Classificacao;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * Versão compacta de um lote para exibição no ranking.
- * Inclui só os campos relevantes para tomada de decisão rápida.
+ * DTO compacto para exibição no ranking.
+ * Fix #14: classificação delegada para Classificacao.de().
  */
 public record RankingItemDTO(
     Long          id,
@@ -27,16 +28,6 @@ public record RankingItemDTO(
     LocalDateTime dataLeilao
 ) {
     public static RankingItemDTO from(Lote lote) {
-        double score = lote.getScoreOportunidade() != null
-            ? lote.getScoreOportunidade().doubleValue() : 0.0;
-
-        String classif;
-        if (score >= 80)      classif = "Excelente";
-        else if (score >= 65) classif = "Muito bom";
-        else if (score >= 50) classif = "Bom";
-        else if (score >= 35) classif = "Regular";
-        else                  classif = "Baixo";
-
         return new RankingItemDTO(
             lote.getId(),
             lote.getFonte(),
@@ -50,7 +41,7 @@ public record RankingItemDTO(
             lote.isAceitaFinanciamento(),
             lote.isAceitaFgts(),
             lote.getScoreOportunidade(),
-            classif,
+            Classificacao.de(lote.getScoreOportunidade()), // Fix #14
             lote.getDataLeilao()
         );
     }

@@ -1,5 +1,6 @@
 package com.leilao.score;
 
+import com.leilao.util.Classificacao;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -22,13 +23,8 @@ public record ResultadoScore(
     LocalDateTime calculadoEm
 ) {
     /** Classificação textual para exibição no front-end. */
-    public String classificacao() {
-        if (scoreFinal >= 80) return "Excelente";
-        if (scoreFinal >= 65) return "Muito bom";
-        if (scoreFinal >= 50) return "Bom";
-        if (scoreFinal >= 35) return "Regular";
-        return "Baixo";
-    }
+    // Fix #14: delegado para utilitário centralizado
+    public String classificacao() { return Classificacao.de(scoreFinal); }
 
     /** Resumo compacto para logs e alertas. */
     public String resumo() {

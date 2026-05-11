@@ -1,6 +1,8 @@
 package com.leilao.dto;
 
 import com.leilao.model.TipoLote;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 
@@ -8,7 +10,7 @@ import java.math.BigDecimal;
 
 /**
  * Parâmetros de busca filtrada de lotes.
- * Todos os campos são opcionais — só filtra o que for informado.
+ * Fix #16: @Min não funciona em BigDecimal — substituído por @DecimalMin.
  */
 public record FiltroLoteDTO(
 
@@ -23,16 +25,15 @@ public record FiltroLoteDTO(
     Boolean aceitaFinanciamento,
     Boolean aceitaFgts,
 
-    @Min(value = 0, message = "Valor máximo não pode ser negativo")
+    @DecimalMin(value = "0.0", message = "Valor máximo não pode ser negativo") // Fix #16
     BigDecimal valorMaximo,
 
-    @Min(value = 0, message = "Score mínimo não pode ser negativo")
+    @DecimalMin(value = "0.0", message = "Score mínimo não pode ser negativo") // Fix #16
     BigDecimal scoreMinimo,
 
-    @Min(value = 1) @jakarta.validation.constraints.Max(200)
+    @Min(1) @Max(200)
     Integer limite
 ) {
-    /** Retorna limite com fallback para 50. */
     public int limiteEfetivo() {
         return limite != null ? limite : 50;
     }

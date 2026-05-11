@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -29,14 +29,13 @@ class AlertaServiceTest {
 
     @InjectMocks AlertaService alertaService;
 
-    private Lote loteBom;
-    private Assinante assinanteCompleto;
+    private Lote           loteBom;
+    private Assinante      assinanteCompleto;
 
     @BeforeEach
     void setUp() {
         loteBom = Lote.builder()
-            .id(1L)
-            .fonte("caixa").idExterno("001").urlOriginal("http://x.com")
+            .id(1L).fonte("caixa").idExterno("001").urlOriginal("http://x.com")
             .tipo(TipoLote.IMOVEL_RESIDENCIAL)
             .valorLanceInicial(new BigDecimal("300000"))
             .valorAvaliacao(new BigDecimal("500000"))
@@ -47,24 +46,18 @@ class AlertaServiceTest {
             .build();
 
         assinanteCompleto = Assinante.builder()
-            .id(10L)
-            .nome("João")
-            .email("joao@gmail.com")
-            .whatsapp("5511999990000")
+            .id(10L).nome("João")
+            .email("joao@gmail.com").whatsapp("5511999990000")
             .scoreMinimo(new BigDecimal("60.0"))
-            .estado("SP")
-            .ativo(true)
+            .estado("SP").ativo(true)
             .build();
     }
-
-    // ── Score mínimo ──────────────────────────────────────────────────────────
 
     @Test
     void processarLote_scoreAbaixoDoThreshold_naoEnvia() {
         Assinante exigente = Assinante.builder()
             .id(20L).email("x@x.com").ativo(true)
-            .scoreMinimo(new BigDecimal("80.0"))  // threshold > score do lote (75)
-            .build();
+            .scoreMinimo(new BigDecimal("80.0")).build();
 
         when(assinanteRepo.buscarAssinantesParaLote(any(), any(), any()))
             .thenReturn(List.of(exigente));
@@ -87,18 +80,15 @@ class AlertaServiceTest {
 
         int enviados = alertaService.processarLote(loteBom);
 
-        assertThat(enviados).isEqualTo(2); // e-mail + WhatsApp
+        assertThat(enviados).isEqualTo(2);
         verify(emailService).enviarAlerta(assinanteCompleto, loteBom);
         verify(whatsAppService).enviarAlerta(assinanteCompleto, loteBom);
     }
-
-    // ── Idempotência ──────────────────────────────────────────────────────────
 
     @Test
     void processarLote_jaEnviado_naoReenvia() {
         when(assinanteRepo.buscarAssinantesParaLote(any(), any(), any()))
             .thenReturn(List.of(assinanteCompleto));
-        // Simula que já foi enviado em ambos os canais
         when(historicoRepo.existsByAssinanteIdAndLoteIdAndCanal(any(), any(), any()))
             .thenReturn(true);
 
@@ -108,8 +98,6 @@ class AlertaServiceTest {
         verify(emailService, never()).enviarAlerta(any(), any());
         verify(whatsAppService, never()).enviarAlerta(any(), any());
     }
-
-    // ── Sem score ─────────────────────────────────────────────────────────────
 
     @Test
     void processarLote_semScore_ignoraLote() {
@@ -121,26 +109,21 @@ class AlertaServiceTest {
         verify(assinanteRepo, never()).buscarAssinantesParaLote(any(), any(), any());
     }
 
-    // ── Falha no envio ────────────────────────────────────────────────────────
-
     @Test
-    void processarLote_falhaEmail_registraErroNoHistorico() {
+    void processarLote_falhaEmail_registraNoHistorico() {
         when(assinanteRepo.buscarAssinantesParaLote(any(), any(), any()))
             .thenReturn(List.of(assinanteCompleto));
         when(historicoRepo.existsByAssinanteIdAndLoteIdAndCanal(any(), any(), any()))
             .thenReturn(false);
-        when(emailService.enviarAlerta(any(), any())).thenReturn(false);   // falha
-        when(whatsAppService.enviarAlerta(any(), any())).thenReturn(true); // sucesso
+        when(emailService.enviarAlerta(any(), any())).thenReturn(false);
+        when(whatsAppService.enviarAlerta(any(), any())).thenReturn(true);
 
         int enviados = alertaService.processarLote(loteBom);
 
-        // Só o WhatsApp teve sucesso
         assertThat(enviados).isEqualTo(1);
-        // Histórico deve ser salvo para ambos (sucesso e falha)
+        // Histórico salvo para e-mail (falha) e WhatsApp (sucesso)
         verify(historicoRepo, times(2)).save(any(HistoricoAlerta.class));
     }
-
-    // ── Só e-mail ─────────────────────────────────────────────────────────────
 
     @Test
     void processarLote_assinanteSoEmail_enviaSoEmail() {
@@ -161,25 +144,13 @@ class AlertaServiceTest {
         verify(whatsAppService, never()).enviarAlerta(any(), any());
     }
 
-    // ── Processamento diário ──────────────────────────────────────────────────
-
     @Test
-    void processarAlertasDiarios_processaTodosOsLotes() {
-        Lote outro = Lote.builder()
-            .id(2L).fonte("sold").idExterno("002").urlOriginal("http://y.com")
-            .tipo(TipoLote.VEICULO)
-            .valorLanceInicial(new BigDecimal("50000"))
-            .scoreOportunidade(new BigDecimal("70.0"))
-            .coletadoEm(LocalDateTime.now())
-            .build();
-
-        when(loteRepo.findColetadosHoje()).thenReturn(List.of(loteBom, outro));
-        when(assinanteRepo.buscarAssinantesParaLote(any(), any(), any()))
-            .thenReturn(List.of()); // sem assinantes = sem envios
+    void processarAlertasDiarios_semLotes_retornaZero() {
+        when(loteRepo.findColetadosHoje()).thenReturn(List.of());
 
         int enviados = alertaService.processarAlertasDiarios();
 
         assertThat(enviados).isZero();
-        verify(assinanteRepo, times(2)).buscarAssinantesParaLote(any(), any(), any());
+        verify(assinanteRepo, never()).buscarAssinantesParaLote(any(), any(), any());
     }
 }

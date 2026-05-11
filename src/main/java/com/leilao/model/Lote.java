@@ -8,10 +8,10 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 /**
  * Entidade central — representa um lote coletado de qualquer portal de leilão.
- * Equivalente ao models/lote.py do projeto Python.
  *
  * Campos de score (preenchidos pelo MotorScore):
  *   scoreOportunidade   — 0 a 100, média ponderada das 4 dimensões
@@ -28,10 +28,10 @@ import java.time.LocalDateTime;
         columnNames = {"fonte", "id_externo"}
     ),
     indexes = {
-        @Index(name = "ix_lotes_data_leilao",    columnList = "data_leilao"),
-        @Index(name = "ix_lotes_cidade_estado",  columnList = "cidade, estado"),
-        @Index(name = "ix_lotes_tipo_status",    columnList = "tipo, status"),
-        @Index(name = "ix_lotes_score",          columnList = "score_oportunidade")
+        @Index(name = "ix_lotes_data_leilao",   columnList = "data_leilao"),
+        @Index(name = "ix_lotes_cidade_estado", columnList = "cidade, estado"),
+        @Index(name = "ix_lotes_tipo_status",   columnList = "tipo, status"),
+        @Index(name = "ix_lotes_score",         columnList = "score_oportunidade")
     }
 )
 @Getter @Setter
@@ -40,21 +40,19 @@ import java.time.LocalDateTime;
 @Builder
 public class Lote {
 
-    // ── Identificação ─────────────────────────────────────────────────────────
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(nullable = false, length = 50)
-    private String fonte;              // "caixa" | "superbid" | "sold" | "parque_leiloes"
+    private String fonte;
 
     @Column(name = "id_externo", nullable = false, length = 100)
-    private String idExterno;          // ID original no portal
+    private String idExterno;
 
     @Column(name = "url_original", nullable = false, columnDefinition = "TEXT")
     private String urlOriginal;
 
-    // ── Classificação ─────────────────────────────────────────────────────────
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default
@@ -68,17 +66,15 @@ public class Lote {
     @Builder.Default
     private StatusLote status = StatusLote.DISPONIVEL;
 
-    // ── Valores ───────────────────────────────────────────────────────────────
     @Column(name = "valor_avaliacao", precision = 15, scale = 2)
-    private BigDecimal valorAvaliacao;         // valor de mercado
+    private BigDecimal valorAvaliacao;
 
     @Column(name = "valor_lance_inicial", nullable = false, precision = 15, scale = 2)
-    private BigDecimal valorLanceInicial;      // lance mínimo
+    private BigDecimal valorLanceInicial;
 
     @Column(name = "valor_incremento", precision = 15, scale = 2)
     private BigDecimal valorIncremento;
 
-    // ── Financiamento ─────────────────────────────────────────────────────────
     @Column(name = "aceita_financiamento", nullable = false)
     @Builder.Default
     private boolean aceitaFinanciamento = false;
@@ -90,7 +86,6 @@ public class Lote {
     @Column(name = "banco_financiador", length = 100)
     private String bancoFinanciador;
 
-    // ── Localização ───────────────────────────────────────────────────────────
     @Column(length = 255)
     private String logradouro;
 
@@ -101,7 +96,7 @@ public class Lote {
     private String cidade;
 
     @Column(length = 2)
-    private String estado;             // UF: "SP", "RJ", etc.
+    private String estado;
 
     @Column(length = 9)
     private String cep;
@@ -112,7 +107,6 @@ public class Lote {
     @Column(precision = 10, scale = 7)
     private BigDecimal longitude;
 
-    // ── Detalhes do bem ───────────────────────────────────────────────────────
     @Column(columnDefinition = "TEXT")
     private String descricao;
 
@@ -125,10 +119,9 @@ public class Lote {
     @Column(name = "debitos_conhecidos", columnDefinition = "TEXT")
     private String debitosConhecidos;
 
-    @Column(nullable = true)
-    private Boolean ocupado;          // true = imóvel ocupado (risco de desocupação)
+    // Fix #7: removido @Column(nullable = true) — é o default, gerava ruído
+    private Boolean ocupado;
 
-    // ── Datas ─────────────────────────────────────────────────────────────────
     @Column(name = "data_leilao")
     private LocalDateTime dataLeilao;
 
@@ -138,7 +131,6 @@ public class Lote {
     @Column(name = "data_segundo_leilao")
     private LocalDateTime dataSegundoLeilao;
 
-    // ── Score (preenchido pelo MotorScore) ────────────────────────────────────
     @Column(name = "score_oportunidade", precision = 5, scale = 2)
     private BigDecimal scoreOportunidade;
 
@@ -157,7 +149,6 @@ public class Lote {
     @Column(name = "score_calculado_em")
     private LocalDateTime scoreCalculadoEm;
 
-    // ── Controle interno ──────────────────────────────────────────────────────
     @CreationTimestamp
     @Column(name = "coletado_em", nullable = false, updatable = false)
     private LocalDateTime coletadoEm;
@@ -170,15 +161,8 @@ public class Lote {
     private String fonteScraperVersao;
 
     @Column(name = "html_raw", columnDefinition = "TEXT")
-    private String htmlRaw;            // HTML bruto para reprocessamento
+    private String htmlRaw;
 
-    // ── Propriedade calculada ─────────────────────────────────────────────────
-
-    /**
-     * Desconto do lance inicial em relação ao valor de avaliação.
-     * Ex: avaliação R$500k, lance R$300k → 40.00%
-     * Retorna null se não houver valor de avaliação.
-     */
     public BigDecimal getDescontoPercentual() {
         if (valorAvaliacao == null || valorAvaliacao.compareTo(BigDecimal.ZERO) <= 0) {
             return null;
@@ -187,6 +171,23 @@ public class Lote {
                 .subtract(valorLanceInicial.divide(valorAvaliacao, 10, RoundingMode.HALF_UP))
                 .multiply(BigDecimal.valueOf(100))
                 .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Fix #15: equals/hashCode baseados no ID.
+     * Em entidades JPA o Lombok @Data é perigoso — usa todos os campos,
+     * causando StackOverflow com relacionamentos lazy e bugs em Sets/Maps.
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof Lote other)) return false;
+        return id != null && id.equals(other.id);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(id);
     }
 
     @Override
