@@ -1,0 +1,37 @@
+# docker-compose.prod.yml
+# Configurações de produção — use com:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Diferenças de produção:
+#   - Banco SEM porta exposta externamente
+#   - Logs apenas INFO
+#   - Restart always
+#   - Limites de memória e CPU
+#   - Variáveis sensíveis via .env.prod (nunca commitar!)
+
+version: "3.9"
+
+services:
+  db:
+    ports: []    # banco NÃO exposto externamente em produção
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}   # obrigatório em .env.prod
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  app:
+    restart: always
+    environment:
+      LOGGING_LEVEL_COM_LEILAO:        INFO
+      LOGGING_LEVEL_ORG_HIBERNATE_SQL: WARN
+      SPRING_JPA_SHOW_SQL:             "false"
+      LEILAO_SCRAPER_CRON:             "0 0 9 * * *"   # 06:00 BRT
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1024M
